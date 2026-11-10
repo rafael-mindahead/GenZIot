@@ -43,19 +43,28 @@ struct ErroBody {
 }
 
 struct ApiError(StatusCode, &'static str);
-
 impl ApiError {
-    const OCUPADO: Self = Self(StatusCode::SERVICE_UNAVAILABLE, "ingestao_ocupada");
+    fn ocupado(causa: &'static str) -> Self {
+        Self(StatusCode::SERVICE_UNAVAILABLE, causa)
+    }
 }
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        let mut response = (self.0, Json(ErroBody { erro: self.1 })).into_response();
-        if self.0 == StatusCode::SERVICE_UNAVAILABLE {
-            response
-                .headers_mut()
-                .insert(RETRY_AFTER, HeaderValue::from_static("1"));
+        let indisponivel = self.0 == StatusCode::SERVICE_UNAVAILABLE;
+        let erro = if indisponivel {
+            "ingestao_ocupada"
+        } else {
+            self.1
+        };
+        let mut response = (self.0, Json(ErroBody { erro })).into_response();
+
+        if indisponivel {
+            let headers = response.headers_mut();
+            headers.insert(RETRY_AFTER, HeaderValue::from_static("1"));
+            headers.insert("x-genziot-503-cause", HeaderValue::from_static(self.1));
         }
+
         response
     }
 }
@@ -67,14 +76,16 @@ impl From<sqlx::Error> for ApiError {
             .and_then(|error| error.try_downcast_ref::<MySqlDatabaseError>())
             .map(MySqlDatabaseError::number);
 
-        if matches!(&error, sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed)
-            || matches!(mysql_number, Some(1205 | 1213))
-        {
-            return Self::OCUPADO;
+        match (&error, mysql_number) {
+            (sqlx::Error::PoolTimedOut, _) => Self::ocupado("pool_timeout"),
+            (sqlx::Error::PoolClosed, _) => Self::ocupado("pool_fechado"),
+            (_, Some(1205)) => Self::ocupado("lock_timeout"),
+            (_, Some(1213)) => Self::ocupado("deadlock"),
+            _ => {
+                eprintln!("Falha na persistência da movimentação: {error}");
+                Self(StatusCode::INTERNAL_SERVER_ERROR, "erro_de_persistencia")
+            }
         }
-
-        eprintln!("Falha na persistência da movimentação: {error}");
-        Self(StatusCode::INTERNAL_SERVER_ERROR, "erro_de_persistencia")
     }
 }
 
@@ -93,7 +104,7 @@ async fn registrar(
     let _permit = state
         .admission
         .try_acquire()
-        .map_err(|_| ApiError::OCUPADO)?;
+        .map_err(|_| ApiError::ocupado("admissao"))?;
     let evento_id = &evento.evento_id.as_bytes()[..];
     let mut tx = state.pool.begin().await?;
 
