@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: genziot
+      MYSQL_USER: genziot
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?defina MYSQL_PASSWORD no .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?defina MYSQL_ROOT_PASSWORD no .env}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
+      - ./infra/mysql/seed:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysql --protocol=TCP -h 127.0.0.1 -u \"$$MYSQL_USER\" --password=\"$$MYSQL_PASSWORD\" -D \"$$MYSQL_DATABASE\" -Nse 'SELECT 1 FROM produtos LIMIT 0'"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  mysql-data:
