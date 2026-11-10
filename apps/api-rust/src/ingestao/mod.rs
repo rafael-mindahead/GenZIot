@@ -6,7 +6,8 @@ use axum::{
     routing::post,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::mysql::MySqlDatabaseError;
+use sqlx::{Connection, mysql::MySqlDatabaseError};
+use std::time::Instant;
 use uuid::Uuid;
 
 use crate::AppState;
@@ -106,7 +107,13 @@ async fn registrar(
         .try_acquire()
         .map_err(|_| ApiError::ocupado("admissao"))?;
     let evento_id = &evento.evento_id.as_bytes()[..];
-    let mut tx = state.pool.begin().await?;
+    let inicio_aquisicao = Instant::now();
+    let conexao = state.pool.acquire().await;
+    state
+        .metrics
+        .registrar_aquisicao(inicio_aquisicao.elapsed());
+    let mut conexao = conexao?;
+    let mut tx = conexao.begin().await?;
 
     // O lock serializa alterações no saldo do mesmo produto até o commit.
     let produto: Option<(u32, u32)> =
@@ -139,8 +146,9 @@ async fn registrar(
             return Err(error.into());
         }
 
-        // Libera o lock antes de consultar o evento já confirmado.
+        // Libera o lock e devolve a conexão antes de consultar o evento já confirmado.
         tx.rollback().await?;
+        drop(conexao);
         let original: (u32, u32, i16) = sqlx::query_as(
             "SELECT produto_id, dispositivo_id, quantidade_delta
              FROM movimentacoes_estoque WHERE evento_id = ?",

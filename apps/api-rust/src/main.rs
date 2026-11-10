@@ -12,6 +12,7 @@ use tokio::{net::TcpListener, sync::Semaphore};
 struct AppState {
     pool: MySqlPool,
     admission: Arc<Semaphore>,
+    metrics: Arc<metrics::Metrics>,
 }
 
 fn config<T: FromStr>(name: &str, default: &str) -> Result<T, Box<dyn Error>> {
@@ -65,6 +66,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let state = AppState {
         pool,
         admission: Arc::new(Semaphore::new(in_flight)),
+        metrics: Arc::clone(&metrics),
     };
     let public_app = ingestao::routes()
         .route_layer(middleware::from_fn_with_state(
