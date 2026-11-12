@@ -1,0 +1,14 @@
+{
+  "lockfileVersion": 2,
+  "configVersion": 0,
+  "workspaces": {
+    "": {
+      "dependencies": {
+        "k6": "^0.0.0",
+      },
+    },
+  },
+  "packages": {
+    "k6": ["k6@0.0.0", "", {}, "sha512-GAQSWayS2+LjbH5bkRi+pMPYyP1JSp7o+4j58ANZ762N/RH/SdlAT3CHHztnn8s/xgg8kYNM24Gd2IPo9b5W+g=="],
+  }
+}
